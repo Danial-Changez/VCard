@@ -29,12 +29,12 @@ parser: $(OBJ)
 # Compile VCParser.c into an object file.
 src/VCParser.o: src/VCParser.c
 	@echo "Compiling VCParser.c..."
-	$(CC) $(CFLAGS) -Iinclude -c $< -o $@
+	$(CC) $(CFLAGS) -fPIC -Iinclude -c $< -o $@
 
 # Compile LinkedListAPI.c into an object file.
 src/LinkedListAPI.o: src/LinkedListAPI.c
 	@echo "Compiling LinkedListAPI.c..."
-	$(CC) $(CFLAGS) -Iinclude -c $< -o $@
+	$(CC) $(CFLAGS) -fPIC -Iinclude -c $< -o $@
 
 # Clean up all generated files.
 clean:

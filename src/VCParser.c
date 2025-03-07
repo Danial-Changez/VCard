@@ -17,7 +17,6 @@
 
 // duplicateString
 // Allocates memory and returns a duplicate of the input string.
-// This function replaces strdup.
 char *duplicateString(const char *str)
 {
     if (!str)
@@ -29,8 +28,7 @@ char *duplicateString(const char *str)
 }
 
 // trimWhitespace
-// Removes any leading and trailing whitespace from the string.
-// The string is modified in place.
+// Removes any leading and trailing whitespace from the string (modifies in place).
 char *trimWhitespace(char *str)
 {
     if (!str)
@@ -59,9 +57,8 @@ bool containsAlpha(const char *str)
 }
 
 // splitComposite
-// Splits a composite property value (for example, the N property)
-// on the specified delimiter, preserving empty tokens.
-// Returns a pointer to a newly allocated List of strings.
+// Splits a composite property value (e.g. the N property) on the specified delimiter,
+// preserving empty tokens. Returns a pointer to a newly allocated List of strings.
 List *splitComposite(const char *str, char delim)
 {
     List *list = initializeList(&valueToString, &deleteValue, &compareValues);
@@ -92,16 +89,11 @@ List *splitComposite(const char *str, char delim)
 //      Main Parser Functions
 //------------------------------
 
-// createCard
-// Reads the vCard file, validates the overall structure and grammar,
-// parses properties (including parameters and values), and builds a Card object.
-// Returns an appropriate VCardErrorCode (OK, INV_FILE, INV_CARD, INV_PROP, or OTHER_ERROR).
 VCardErrorCode createCard(char *fileName, Card **obj)
 {
     if (!fileName || strlen(fileName) == 0 || !obj)
         return INV_FILE;
 
-    // Check file extension (.vcf or .vcard)
     char *ext = strrchr(fileName, '.');
     if (!ext || (strcmp(ext, ".vcf") != 0 && strcmp(ext, ".vcard") != 0))
         return INV_FILE;
@@ -121,9 +113,6 @@ VCardErrorCode createCard(char *fileName, Card **obj)
     newCard->birthday = NULL;
     newCard->anniversary = NULL;
 
-    // Read the file and build an array of "logical" lines.
-    // Each physical line must end with CRLF.
-    // Lines starting with a space or tab are treated as folded lines.
     char buffer[256];
     int numLines = 0, capacity = 10;
     char **logicalLines = malloc(capacity * sizeof(char *));
@@ -137,7 +126,6 @@ VCardErrorCode createCard(char *fileName, Card **obj)
     while (fgets(buffer, sizeof(buffer), file))
     {
         size_t len = strlen(buffer);
-        // Verify CRLF ending
         if (len < 2 || buffer[len - 1] != '\n' || buffer[len - 2] != '\r')
         {
             for (int i = 0; i < numLines; i++)
@@ -149,10 +137,9 @@ VCardErrorCode createCard(char *fileName, Card **obj)
             deleteCard(newCard);
             return INV_CARD;
         }
-        buffer[len - 2] = '\0'; // Remove CRLF
+        buffer[len - 2] = '\0';
         if (buffer[0] == ' ' || buffer[0] == '\t')
         {
-            // This is a folded line; append it to currentLogical.
             if (!currentLogical)
             {
                 for (int i = 0; i < numLines; i++)
@@ -181,7 +168,6 @@ VCardErrorCode createCard(char *fileName, Card **obj)
         }
         else
         {
-            // New logical line starts.
             if (currentLogical)
             {
                 if (numLines == capacity)
@@ -236,7 +222,6 @@ VCardErrorCode createCard(char *fileName, Card **obj)
     }
     fclose(file);
 
-    // Verify that the first and last logical lines are "BEGIN:VCARD" and "END:VCARD"
     if (numLines < 2 ||
         strcmp(logicalLines[0], "BEGIN:VCARD") != 0 ||
         strcmp(logicalLines[numLines - 1], "END:VCARD") != 0)
@@ -249,13 +234,11 @@ VCardErrorCode createCard(char *fileName, Card **obj)
     }
 
     bool versionFound = false;
-    // Process each logical line (skip the BEGIN and END lines)
     for (int i = 1; i < numLines - 1; i++)
     {
         char *line = logicalLines[i];
         if (strlen(line) == 0)
             continue;
-        // Each property line must contain a colon.
         char *colon = strchr(line, ':');
         if (!colon)
         {
@@ -277,8 +260,6 @@ VCardErrorCode createCard(char *fileName, Card **obj)
             return INV_PROP;
         }
 
-        // Parse the left part into a property group and name.
-        // The format is: [group.]propName[;paramName=paramValue...]
         char *leftDup = duplicateString(leftPart);
         if (!leftDup)
         {
@@ -305,7 +286,6 @@ VCardErrorCode createCard(char *fileName, Card **obj)
         if (dot)
         {
             *dot = '\0';
-            // Preserve the group as it appears
             propGroup = duplicateString(token);
             propName = duplicateString(trimWhitespace(dot + 1));
         }
@@ -326,7 +306,6 @@ VCardErrorCode createCard(char *fileName, Card **obj)
             return INV_PROP;
         }
 
-        // Create a new Property structure
         Property *property = malloc(sizeof(Property));
         if (!property)
         {
@@ -343,7 +322,6 @@ VCardErrorCode createCard(char *fileName, Card **obj)
         property->parameters = initializeList(&parameterToString, &deleteParameter, &compareParameters);
         property->values = initializeList(&valueToString, &deleteValue, &compareValues);
 
-        // Process any parameters from the left part
         while ((token = strtok(NULL, ";")) != NULL)
         {
             token = trimWhitespace(token);
@@ -388,17 +366,14 @@ VCardErrorCode createCard(char *fileName, Card **obj)
             insertBack(property->parameters, param);
         }
 
-        // Process the property value
         if (strcmp(property->name, "N") == 0)
         {
-            // Composite property: split by ';'
             clearList(property->values);
             free(property->values);
             property->values = splitComposite(rightPart, ';');
         }
         else
         {
-            // For TEL properties, truncate at the first semicolon
             char *val = duplicateString(rightPart);
             if (strcmp(property->name, "TEL") == 0)
             {
@@ -409,7 +384,6 @@ VCardErrorCode createCard(char *fileName, Card **obj)
             insertBack(property->values, val);
         }
 
-        // Special treatment for required and date-related properties
         if (strcmp(property->name, "BEGIN") == 0 ||
             strcmp(property->name, "END") == 0)
         {
@@ -604,8 +578,274 @@ VCardErrorCode createCard(char *fileName, Card **obj)
     return OK;
 }
 
-// deleteCard
-// Frees all memory associated with a Card. Handles a NULL pointer gracefully.
+//------------------------------
+//      Module 2 Functions
+//------------------------------
+
+// propertyToFileString
+// Converts a Property structure to a string in vCard file format.
+// Format: [group.]name[;paramName=paramValue...]:value[;value2...]
+static char *propertyToFileString(void *prop)
+{
+    Property *p = (Property *)prop;
+    char *result = malloc(1024);
+    if (!result)
+        return NULL;
+    result[0] = '\0';
+
+    if (strlen(p->group) > 0)
+    {
+        strcat(result, p->group);
+        strcat(result, ".");
+    }
+    strcat(result, p->name);
+
+    // Append parameters.
+    ListIterator paramIter = createIterator(p->parameters);
+    void *pdata;
+    while ((pdata = nextElement(&paramIter)) != NULL)
+    {
+        Parameter *param = (Parameter *)pdata;
+        strcat(result, ";");
+        strcat(result, param->name);
+        strcat(result, "=");
+        strcat(result, param->value);
+    }
+
+    strcat(result, ":");
+    // Append property values, joined by semicolons.
+    if (getLength(p->values) > 0)
+    {
+        ListIterator valIter = createIterator(p->values);
+        void *vdata;
+        bool first = true;
+        while ((vdata = nextElement(&valIter)) != NULL)
+        {
+            if (!first)
+                strcat(result, ";");
+            strcat(result, (char *)vdata);
+            first = false;
+        }
+    }
+    return result;
+}
+
+// writeCard
+// Writes a Card object to a file in valid vCard format with CRLF line endings.
+// Output is unfolded. Returns WRITE_ERROR if any write fails; otherwise, OK.
+// If fileName or obj is NULL, returns WRITE_ERROR.
+VCardErrorCode writeCard(const char *fileName, const Card *obj)
+{
+    if (!fileName || !obj)
+        return WRITE_ERROR;
+
+    FILE *fp = fopen(fileName, "w");
+    if (!fp)
+        return WRITE_ERROR;
+
+    if (fprintf(fp, "BEGIN:VCARD\r\n") < 0 ||
+        fprintf(fp, "VERSION:4.0\r\n") < 0)
+    {
+        fclose(fp);
+        return WRITE_ERROR;
+    }
+
+    // Write FN property.
+    char *line = propertyToFileString((void *)obj->fn);
+    if (!line)
+    {
+        fclose(fp);
+        return WRITE_ERROR;
+    }
+    if (fprintf(fp, "%s\r\n", line) < 0)
+    {
+        free(line);
+        fclose(fp);
+        return WRITE_ERROR;
+    }
+    free(line);
+
+    // Write BDAY property.
+    if (obj->birthday)
+    {
+        DateTime *dt = obj->birthday;
+        if (dt->isText)
+        {
+            if (fprintf(fp, "BDAY;VALUE=text:%s\r\n", dt->text) < 0)
+            {
+                fclose(fp);
+                return WRITE_ERROR;
+            }
+        }
+        else
+        {
+            char *bday = dateToString((void *)dt);
+            if (fprintf(fp, "BDAY:%s\r\n", bday) < 0)
+            {
+                free(bday);
+                fclose(fp);
+                return WRITE_ERROR;
+            }
+            free(bday);
+        }
+    }
+
+    // Write ANNIVERSARY property.
+    if (obj->anniversary)
+    {
+        DateTime *dt = obj->anniversary;
+        if (dt->isText)
+        {
+            if (fprintf(fp, "ANNIVERSARY;VALUE=text:%s\r\n", dt->text) < 0)
+            {
+                fclose(fp);
+                return WRITE_ERROR;
+            }
+        }
+        else
+        {
+            char *anniv = dateToString((void *)dt);
+            if (fprintf(fp, "ANNIVERSARY:%s\r\n", anniv) < 0)
+            {
+                free(anniv);
+                fclose(fp);
+                return WRITE_ERROR;
+            }
+            free(anniv);
+        }
+    }
+
+    // Write optional properties using propertyToFileString.
+    ListIterator iter = createIterator(obj->optionalProperties);
+    void *data;
+    while ((data = nextElement(&iter)) != NULL)
+    {
+        char *propLine = propertyToFileString(data);
+        if (!propLine)
+        {
+            fclose(fp);
+            return WRITE_ERROR;
+        }
+        if (fprintf(fp, "%s\r\n", propLine) < 0)
+        {
+            free(propLine);
+            fclose(fp);
+            return WRITE_ERROR;
+        }
+        free(propLine);
+    }
+
+    if (fprintf(fp, "END:VCARD\r\n") < 0)
+    {
+        fclose(fp);
+        return WRITE_ERROR;
+    }
+
+    if (ferror(fp))
+    {
+        fclose(fp);
+        return WRITE_ERROR;
+    }
+
+    fclose(fp);
+    return OK;
+}
+
+// validateCard
+// Validates a Card object against internal structure requirements and a subset
+// of the vCard format rules. Returns OK if the Card is valid; otherwise returns an
+// appropriate error code: INV_CARD if the Card is invalid, INV_PROP for property-level errors,
+// or INV_DT for inconsistent DateTime fields.
+VCardErrorCode validateCard(const Card *obj)
+{
+    if (!obj)
+        return INV_CARD;
+
+    if (!obj->fn || !obj->optionalProperties)
+        return INV_CARD;
+    if (strcmp(obj->fn->name, "FN") != 0)
+        return INV_PROP;
+    if (getLength(obj->fn->values) == 0)
+        return INV_PROP;
+
+    ListIterator iter = createIterator(obj->optionalProperties);
+    void *data;
+    int countN = 0, countKIND = 0;
+    while ((data = nextElement(&iter)) != NULL)
+    {
+        Property *prop = (Property *)data;
+        if (strcmp(prop->name, "VERSION") == 0)
+            return INV_CARD;
+        if (strcmp(prop->name, "BDAY") == 0 || strcmp(prop->name, "ANNIVERSARY") == 0)
+            return INV_DT;
+        if (strcmp(prop->name, "N") == 0)
+        {
+            countN++;
+            if (getLength(prop->values) != 5)
+                return INV_PROP;
+        }
+        if (strcmp(prop->name, "KIND") == 0)
+        {
+            countKIND++;
+        }
+        if (getLength(prop->values) == 0)
+            return INV_PROP;
+        ListIterator paramIter = createIterator(prop->parameters);
+        void *pData;
+        while ((pData = nextElement(&paramIter)) != NULL)
+        {
+            Parameter *p = (Parameter *)pData;
+            if (strlen(p->name) == 0 || strlen(p->value) == 0)
+                return INV_PROP;
+        }
+    }
+    if (countN > 1)
+        return INV_PROP;
+    if (countKIND > 1)
+        return INV_PROP;
+
+    if (obj->birthday)
+    {
+        if (obj->birthday->isText)
+        {
+            if (strlen(obj->birthday->date) > 0 || strlen(obj->birthday->time) > 0 || obj->birthday->UTC)
+                return INV_DT;
+        }
+        else
+        {
+            int dateEmpty = (strlen(obj->birthday->date) == 0);
+            int timeEmpty = (strlen(obj->birthday->time) == 0);
+            if (dateEmpty && timeEmpty)
+                return INV_DT;
+            if (strlen(obj->birthday->text) > 0)
+                return INV_DT;
+        }
+    }
+    if (obj->anniversary)
+    {
+        if (obj->anniversary->isText)
+        {
+            if (strlen(obj->anniversary->date) > 0 || strlen(obj->anniversary->time) > 0 || obj->anniversary->UTC)
+                return INV_DT;
+        }
+        else
+        {
+            int dateEmpty = (strlen(obj->anniversary->date) == 0);
+            int timeEmpty = (strlen(obj->anniversary->time) == 0);
+            if (dateEmpty && timeEmpty)
+                return INV_DT;
+            if (strlen(obj->anniversary->text) > 0)
+                return INV_DT;
+        }
+    }
+
+    return OK;
+}
+
+//------------------------------
+//      Existing Functions
+//------------------------------
+
 void deleteCard(Card *obj)
 {
     if (!obj)
@@ -624,8 +864,6 @@ void deleteCard(Card *obj)
     free(obj);
 }
 
-// cardToString
-// Returns a string representation of the Card. If obj is NULL, returns "null".
 char *cardToString(const Card *obj)
 {
     if (!obj)
@@ -658,8 +896,6 @@ char *cardToString(const Card *obj)
     return result;
 }
 
-// errorToString
-// Converts a VCardErrorCode into its corresponding error message.
 char *errorToString(VCardErrorCode err)
 {
     switch (err)
@@ -687,8 +923,6 @@ char *errorToString(VCardErrorCode err)
 //  Helper Functions for List
 //------------------------------
 
-// deleteProperty
-// Frees all memory associated with a Property.
 void deleteProperty(void *toBeDeleted)
 {
     Property *prop = (Property *)toBeDeleted;
@@ -704,8 +938,6 @@ void deleteProperty(void *toBeDeleted)
     }
 }
 
-// compareProperties
-// Compares two Property structures by their name fields.
 int compareProperties(const void *first, const void *second)
 {
     Property *p1 = (Property *)first;
@@ -713,9 +945,6 @@ int compareProperties(const void *first, const void *second)
     return strcmp(p1->name, p2->name);
 }
 
-// propertyToString
-// Returns a string representation of a Property.
-// If the group is nonempty, the format is "group.name: value", otherwise "name: value".
 char *propertyToString(void *prop)
 {
     Property *p = (Property *)prop;
@@ -729,8 +958,6 @@ char *propertyToString(void *prop)
     return result;
 }
 
-// deleteParameter
-// Frees memory associated with a Parameter.
 void deleteParameter(void *toBeDeleted)
 {
     Parameter *param = (Parameter *)toBeDeleted;
@@ -742,8 +969,6 @@ void deleteParameter(void *toBeDeleted)
     }
 }
 
-// compareParameters
-// Compares two Parameter structures by their name fields.
 int compareParameters(const void *first, const void *second)
 {
     Parameter *p1 = (Parameter *)first;
@@ -751,8 +976,6 @@ int compareParameters(const void *first, const void *second)
     return strcmp(p1->name, p2->name);
 }
 
-// parameterToString
-// Returns a string representation of a Parameter in the form "name=value".
 char *parameterToString(void *param)
 {
     Parameter *p = (Parameter *)param;
@@ -763,8 +986,6 @@ char *parameterToString(void *param)
     return result;
 }
 
-// deleteValue
-// Frees a string value.
 void deleteValue(void *toBeDeleted)
 {
     char *value = (char *)toBeDeleted;
@@ -772,8 +993,6 @@ void deleteValue(void *toBeDeleted)
         free(value);
 }
 
-// compareValues
-// Compares two string values.
 int compareValues(const void *first, const void *second)
 {
     char *v1 = (char *)first;
@@ -781,15 +1000,11 @@ int compareValues(const void *first, const void *second)
     return strcmp(v1, v2);
 }
 
-// valueToString
-// Returns a duplicate of a string value.
 char *valueToString(void *val)
 {
     return duplicateString((char *)val);
 }
 
-// deleteDate
-// Frees a DateTime structure.
 void deleteDate(void *toBeDeleted)
 {
     DateTime *dt = (DateTime *)toBeDeleted;
@@ -802,8 +1017,6 @@ void deleteDate(void *toBeDeleted)
     }
 }
 
-// compareDates
-// Compares two DateTime structures by comparing their date strings.
 int compareDates(const void *first, const void *second)
 {
     DateTime *d1 = (DateTime *)first;
@@ -811,9 +1024,6 @@ int compareDates(const void *first, const void *second)
     return strcmp(d1->date, d2->date);
 }
 
-// dateToString
-// Returns a string representation of a DateTime.
-// If isText is true, returns the text field; otherwise, returns "dateTtime".
 char *dateToString(void *date)
 {
     DateTime *dt = (DateTime *)date;
