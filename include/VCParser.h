@@ -113,6 +113,9 @@ VCardErrorCode createCard(char *fileName, Card **obj);
 void deleteCard(Card *obj);
 char *cardToString(const Card *obj);
 char *errorToString(VCardErrorCode err);
+VCardErrorCode createCard(char *fileName, Card **obj);
+VCardErrorCode writeCard(const char *fileName, const Card *obj);
+VCardErrorCode validateCard(const Card *obj);
 // *************************************************************************
 
 // ************* List helper functions - MUST be implemented ***************

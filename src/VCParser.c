@@ -11,12 +11,11 @@
 #include "../include/VCParser.h"
 #include "../include/LinkedListAPI.h"
 
-//------------------------------
-//     My Helper Functions
-//------------------------------
-
-// duplicateString
-// Allocates memory and returns a duplicate of the input string.
+/**
+ * Allocates memory and returns a duplicate of the input string.
+ * @param str The string to duplicate.
+ * @return A pointer to the newly allocated duplicate string, or NULL if str is NULL.
+ */
 char *duplicateString(const char *str)
 {
     if (!str)
@@ -27,8 +26,11 @@ char *duplicateString(const char *str)
     return newStr;
 }
 
-// trimWhitespace
-// Removes any leading and trailing whitespace from the string (modifies in place).
+/**
+ * Removes any leading and trailing whitespace from the string (in place).
+ * @param str The string to trim.
+ * @return The trimmed string.
+ */
 char *trimWhitespace(char *str)
 {
     if (!str)
@@ -44,8 +46,11 @@ char *trimWhitespace(char *str)
     return str;
 }
 
-// containsAlpha
-// Returns true if the input string contains at least one alphabetic character.
+/**
+ * Checks whether the input string contains at least one alphabetic character.
+ * @param str The string to check.
+ * @return true if at least one alphabetic character is found, false otherwise.
+ */
 bool containsAlpha(const char *str)
 {
     for (size_t i = 0; i < strlen(str); i++)
@@ -56,9 +61,13 @@ bool containsAlpha(const char *str)
     return false;
 }
 
-// splitComposite
-// Splits a composite property value (e.g. the N property) on the specified delimiter,
-// preserving empty tokens. Returns a pointer to a newly allocated List of strings.
+/**
+ * Splits a composite property value on the given delimiter, preserving empty tokens.
+ * Used primarily for splitting the "N" property.
+ * @param str The composite string.
+ * @param delim The delimiter character.
+ * @return A pointer to a newly allocated List of string tokens.
+ */
 List *splitComposite(const char *str, char delim)
 {
     List *list = initializeList(&valueToString, &deleteValue, &compareValues);
@@ -85,15 +94,39 @@ List *splitComposite(const char *str, char delim)
     return list;
 }
 
-//------------------------------
-//      Main Parser Functions
-//------------------------------
+/**
+ * Removes a UTF-8 Byte Order Mark (BOM) from the beginning of the file if present.
+ * Leaves the file pointer positioned after the BOM if it exists.
+ * @param file The file pointer to process.
+ */
+static void removeBOM(FILE *file)
+{
+    unsigned char bom[3];
+    size_t bytesRead = fread(bom, 1, 3, file);
+    if (bytesRead == 3)
+    {
+        if (!(bom[0] == 0xEF && bom[1] == 0xBB && bom[2] == 0xBF))
+            fseek(file, 0, SEEK_SET);
+    }
+    else
+    {
+        fseek(file, 0, SEEK_SET);
+    }
+}
 
+/**
+ * Parses a vCard file and creates a Card object.
+ * Checks for proper file extension, required vCard tags, and processes properties.
+ * @param fileName The name of the vCard file.
+ * @param obj A pointer to a Card pointer that will be set to the newly created Card on success.
+ * @return OK on success, or an appropriate VCardErrorCode if an error occurs.
+ */
 VCardErrorCode createCard(char *fileName, Card **obj)
 {
     if (!fileName || strlen(fileName) == 0 || !obj)
         return INV_FILE;
 
+    // Check file extension (.vcf or .vcard)
     char *ext = strrchr(fileName, '.');
     if (!ext || (strcmp(ext, ".vcf") != 0 && strcmp(ext, ".vcard") != 0))
         return INV_FILE;
@@ -101,6 +134,9 @@ VCardErrorCode createCard(char *fileName, Card **obj)
     FILE *file = fopen(fileName, "r");
     if (!file)
         return INV_FILE;
+
+    // Remove BOM if present.
+    removeBOM(file);
 
     Card *newCard = malloc(sizeof(Card));
     if (!newCard)
@@ -113,6 +149,7 @@ VCardErrorCode createCard(char *fileName, Card **obj)
     newCard->birthday = NULL;
     newCard->anniversary = NULL;
 
+    // Read the file into an array of "logical" lines.
     char buffer[256];
     int numLines = 0, capacity = 10;
     char **logicalLines = malloc(capacity * sizeof(char *));
@@ -123,11 +160,27 @@ VCardErrorCode createCard(char *fileName, Card **obj)
         return OTHER_ERROR;
     }
     char *currentLogical = NULL;
+
     while (fgets(buffer, sizeof(buffer), file))
     {
         size_t len = strlen(buffer);
-        if (len < 2 || buffer[len - 1] != '\n' || buffer[len - 2] != '\r')
+        if (len == 0)
+            continue;
+
+        // Remove trailing newline and optional carriage return.
+        if (buffer[len - 1] == '\n')
         {
+            buffer[len - 1] = '\0';
+            len--;
+            if (len > 0 && buffer[len - 1] == '\r')
+            {
+                buffer[len - 1] = '\0';
+                len--;
+            }
+        }
+        else
+        {
+            // Incomplete line
             for (int i = 0; i < numLines; i++)
                 free(logicalLines[i]);
             free(logicalLines);
@@ -137,7 +190,8 @@ VCardErrorCode createCard(char *fileName, Card **obj)
             deleteCard(newCard);
             return INV_CARD;
         }
-        buffer[len - 2] = '\0';
+
+        // Process folded lines: if line starts with space or tab, append.
         if (buffer[0] == ' ' || buffer[0] == '\t')
         {
             if (!currentLogical)
@@ -222,6 +276,7 @@ VCardErrorCode createCard(char *fileName, Card **obj)
     }
     fclose(file);
 
+    // Check for proper BEGIN/END lines.
     if (numLines < 2 ||
         strcmp(logicalLines[0], "BEGIN:VCARD") != 0 ||
         strcmp(logicalLines[numLines - 1], "END:VCARD") != 0)
@@ -234,6 +289,7 @@ VCardErrorCode createCard(char *fileName, Card **obj)
     }
 
     bool versionFound = false;
+    // Process lines 2 to (numLines - 1)
     for (int i = 1; i < numLines - 1; i++)
     {
         char *line = logicalLines[i];
@@ -260,6 +316,7 @@ VCardErrorCode createCard(char *fileName, Card **obj)
             return INV_PROP;
         }
 
+        // Duplicate leftPart for tokenizing parameters.
         char *leftDup = duplicateString(leftPart);
         if (!leftDup)
         {
@@ -294,23 +351,12 @@ VCardErrorCode createCard(char *fileName, Card **obj)
             propGroup = duplicateString("");
             propName = duplicateString(token);
         }
-        free(leftDup);
-        if (!propGroup || !propName || strlen(propName) == 0)
-        {
-            free(propGroup);
-            free(propName);
-            for (int j = 0; j < numLines; j++)
-                free(logicalLines[j]);
-            free(logicalLines);
-            deleteCard(newCard);
-            return INV_PROP;
-        }
 
+        // Allocate and initialize a new Property.
         Property *property = malloc(sizeof(Property));
         if (!property)
         {
-            free(propGroup);
-            free(propName);
+            free(leftDup);
             for (int j = 0; j < numLines; j++)
                 free(logicalLines[j]);
             free(logicalLines);
@@ -322,12 +368,17 @@ VCardErrorCode createCard(char *fileName, Card **obj)
         property->parameters = initializeList(&parameterToString, &deleteParameter, &compareParameters);
         property->values = initializeList(&valueToString, &deleteValue, &compareValues);
 
+        // Process parameters for the property.
         while ((token = strtok(NULL, ";")) != NULL)
         {
             token = trimWhitespace(token);
+            // Skip empty tokens (from trailing semicolons)
+            if (strlen(token) == 0)
+                continue;
             char *equalSign = strchr(token, '=');
             if (!equalSign)
             {
+                free(leftDup);
                 deleteProperty(property);
                 for (int j = 0; j < numLines; j++)
                     free(logicalLines[j]);
@@ -342,6 +393,7 @@ VCardErrorCode createCard(char *fileName, Card **obj)
             {
                 free(paramName);
                 free(paramValue);
+                free(leftDup);
                 deleteProperty(property);
                 for (int j = 0; j < numLines; j++)
                     free(logicalLines[j]);
@@ -354,6 +406,7 @@ VCardErrorCode createCard(char *fileName, Card **obj)
             {
                 free(paramName);
                 free(paramValue);
+                free(leftDup);
                 deleteProperty(property);
                 for (int j = 0; j < numLines; j++)
                     free(logicalLines[j]);
@@ -365,7 +418,10 @@ VCardErrorCode createCard(char *fileName, Card **obj)
             param->value = paramValue;
             insertBack(property->parameters, param);
         }
+        // Finished processing parameters.
+        free(leftDup);
 
+        // Process the property value.
         if (strcmp(property->name, "N") == 0)
         {
             clearList(property->values);
@@ -375,15 +431,10 @@ VCardErrorCode createCard(char *fileName, Card **obj)
         else
         {
             char *val = duplicateString(rightPart);
-            if (strcmp(property->name, "TEL") == 0)
-            {
-                char *semi = strchr(val, ';');
-                if (semi)
-                    *semi = '\0';
-            }
             insertBack(property->values, val);
         }
 
+        // Special handling for reserved properties.
         if (strcmp(property->name, "BEGIN") == 0 ||
             strcmp(property->name, "END") == 0)
         {
@@ -578,13 +629,12 @@ VCardErrorCode createCard(char *fileName, Card **obj)
     return OK;
 }
 
-//------------------------------
-//      Module 2 Functions
-//------------------------------
-
-// propertyToFileString
-// Converts a Property structure to a string in vCard file format.
-// Format: [group.]name[;paramName=paramValue...]:value[;value2...]
+/**
+ * Converts a Property structure to a string in valid vCard file format.
+ * The output format is: [group.]name[;paramName=paramValue...]:value[;value2...]
+ * @param prop A pointer to the Property structure.
+ * @return A newly allocated string representing the property.
+ */
 static char *propertyToFileString(void *prop)
 {
     Property *p = (Property *)prop;
@@ -630,10 +680,13 @@ static char *propertyToFileString(void *prop)
     return result;
 }
 
-// writeCard
-// Writes a Card object to a file in valid vCard format with CRLF line endings.
-// Output is unfolded. Returns WRITE_ERROR if any write fails; otherwise, OK.
-// If fileName or obj is NULL, returns WRITE_ERROR.
+/**
+ * Writes a Card object to a file in valid vCard format with CRLF line endings.
+ * The output is not folded. If any write fails, returns WRITE_ERROR.
+ * @param fileName The output file name.
+ * @param obj The Card object to write.
+ * @return OK on success, WRITE_ERROR on failure.
+ */
 VCardErrorCode writeCard(const char *fileName, const Card *obj)
 {
     if (!fileName || !obj)
@@ -665,7 +718,7 @@ VCardErrorCode writeCard(const char *fileName, const Card *obj)
     }
     free(line);
 
-    // Write BDAY property.
+    // Write BDAY property if present.
     if (obj->birthday)
     {
         DateTime *dt = obj->birthday;
@@ -690,7 +743,7 @@ VCardErrorCode writeCard(const char *fileName, const Card *obj)
         }
     }
 
-    // Write ANNIVERSARY property.
+    // Write ANNIVERSARY property if present.
     if (obj->anniversary)
     {
         DateTime *dt = obj->anniversary;
@@ -715,7 +768,7 @@ VCardErrorCode writeCard(const char *fileName, const Card *obj)
         }
     }
 
-    // Write optional properties using propertyToFileString.
+    // Write optional properties.
     ListIterator iter = createIterator(obj->optionalProperties);
     void *data;
     while ((data = nextElement(&iter)) != NULL)
@@ -751,11 +804,12 @@ VCardErrorCode writeCard(const char *fileName, const Card *obj)
     return OK;
 }
 
-// validateCard
-// Validates a Card object against internal structure requirements and a subset
-// of the vCard format rules. Returns OK if the Card is valid; otherwise returns an
-// appropriate error code: INV_CARD if the Card is invalid, INV_PROP for property-level errors,
-// or INV_DT for inconsistent DateTime fields.
+/**
+ * Validates a Card object against both the internal structure requirements and a subset of the vCard format rules.
+ * Checks that required properties (FN, VERSION) are present and validates the properties and DateTime fields.
+ * @param obj The Card object to validate.
+ * @return OK if the card is valid, or an appropriate error code (INV_CARD, INV_PROP, INV_DT).
+ */
 VCardErrorCode validateCard(const Card *obj)
 {
     if (!obj)
@@ -842,10 +896,10 @@ VCardErrorCode validateCard(const Card *obj)
     return OK;
 }
 
-//------------------------------
-//      Existing Functions
-//------------------------------
-
+/**
+ * Frees all memory associated with a Card object, including its subcomponents.
+ * @param obj The Card object to delete.
+ */
 void deleteCard(Card *obj)
 {
     if (!obj)
@@ -864,6 +918,12 @@ void deleteCard(Card *obj)
     free(obj);
 }
 
+/**
+ * Converts a Card object into a human-readable string representation.
+ * The returned string is dynamically allocated.
+ * @param obj The Card object to convert.
+ * @return A pointer to the allocated string, or "null" if obj is NULL.
+ */
 char *cardToString(const Card *obj)
 {
     if (!obj)
@@ -896,6 +956,12 @@ char *cardToString(const Card *obj)
     return result;
 }
 
+/**
+ * Converts a VCardErrorCode value into a human-readable string.
+ * The returned string is dynamically allocated.
+ * @param err The VCardErrorCode to convert.
+ * @return A pointer to the allocated string representing the error.
+ */
 char *errorToString(VCardErrorCode err)
 {
     switch (err)
@@ -919,10 +985,11 @@ char *errorToString(VCardErrorCode err)
     }
 }
 
-//------------------------------
-//  Helper Functions for List
-//------------------------------
-
+/**
+ * Frees all memory associated with a Property structure.
+ * This includes its name, group, parameters list, values list, and the property itself.
+ * @param toBeDeleted The Property to delete.
+ */
 void deleteProperty(void *toBeDeleted)
 {
     Property *prop = (Property *)toBeDeleted;
@@ -938,6 +1005,12 @@ void deleteProperty(void *toBeDeleted)
     }
 }
 
+/**
+ * Compares two Property structures based on their name.
+ * @param first A pointer to the first Property.
+ * @param second A pointer to the second Property.
+ * @return The result of strcmp on the property names.
+ */
 int compareProperties(const void *first, const void *second)
 {
     Property *p1 = (Property *)first;
@@ -945,6 +1018,12 @@ int compareProperties(const void *first, const void *second)
     return strcmp(p1->name, p2->name);
 }
 
+/**
+ * Converts a Property to a human-readable string representation.
+ * The output format is: [group.]name: first_value.
+ * @param prop The Property to convert.
+ * @return A newly allocated string representing the property.
+ */
 char *propertyToString(void *prop)
 {
     Property *p = (Property *)prop;
@@ -958,6 +1037,10 @@ char *propertyToString(void *prop)
     return result;
 }
 
+/**
+ * Frees all memory associated with a Parameter structure.
+ * @param toBeDeleted The Parameter to delete.
+ */
 void deleteParameter(void *toBeDeleted)
 {
     Parameter *param = (Parameter *)toBeDeleted;
@@ -969,6 +1052,12 @@ void deleteParameter(void *toBeDeleted)
     }
 }
 
+/**
+ * Compares two Parameter structures based on their name.
+ * @param first A pointer to the first Parameter.
+ * @param second A pointer to the second Parameter.
+ * @return The result of strcmp on the parameter names.
+ */
 int compareParameters(const void *first, const void *second)
 {
     Parameter *p1 = (Parameter *)first;
@@ -976,6 +1065,12 @@ int compareParameters(const void *first, const void *second)
     return strcmp(p1->name, p2->name);
 }
 
+/**
+ * Converts a Parameter structure into a string of the format "name=value".
+ * The returned string is dynamically allocated.
+ * @param param The Parameter to convert.
+ * @return A pointer to the allocated string.
+ */
 char *parameterToString(void *param)
 {
     Parameter *p = (Parameter *)param;
@@ -986,6 +1081,10 @@ char *parameterToString(void *param)
     return result;
 }
 
+/**
+ * Frees the memory associated with a value (assumed to be a char pointer).
+ * @param toBeDeleted The value to free.
+ */
 void deleteValue(void *toBeDeleted)
 {
     char *value = (char *)toBeDeleted;
@@ -993,6 +1092,12 @@ void deleteValue(void *toBeDeleted)
         free(value);
 }
 
+/**
+ * Compares two values (strings) using strcmp.
+ * @param first A pointer to the first value.
+ * @param second A pointer to the second value.
+ * @return The result of strcmp on the two strings.
+ */
 int compareValues(const void *first, const void *second)
 {
     char *v1 = (char *)first;
@@ -1000,11 +1105,21 @@ int compareValues(const void *first, const void *second)
     return strcmp(v1, v2);
 }
 
+/**
+ * Converts a value (string) into a new duplicate string.
+ * @param val The value to convert.
+ * @return A pointer to the newly allocated duplicate of the string.
+ */
 char *valueToString(void *val)
 {
     return duplicateString((char *)val);
 }
 
+/**
+ * Frees all memory associated with a DateTime structure.
+ * This includes the date, time, text fields, and the structure itself.
+ * @param toBeDeleted The DateTime structure to delete.
+ */
 void deleteDate(void *toBeDeleted)
 {
     DateTime *dt = (DateTime *)toBeDeleted;
@@ -1017,6 +1132,12 @@ void deleteDate(void *toBeDeleted)
     }
 }
 
+/**
+ * Compares two DateTime structures based on their date strings.
+ * @param first A pointer to the first DateTime.
+ * @param second A pointer to the second DateTime.
+ * @return The result of strcmp on the date fields.
+ */
 int compareDates(const void *first, const void *second)
 {
     DateTime *d1 = (DateTime *)first;
@@ -1024,6 +1145,12 @@ int compareDates(const void *first, const void *second)
     return strcmp(d1->date, d2->date);
 }
 
+/**
+ * Converts a DateTime structure to a string representation.
+ * For text DateTime, returns the text; otherwise, returns the concatenation of date and time.
+ * @param date The DateTime structure to convert.
+ * @return A newly allocated string representing the DateTime.
+ */
 char *dateToString(void *date)
 {
     DateTime *dt = (DateTime *)date;
@@ -1033,6 +1160,13 @@ char *dateToString(void *date)
     if (dt->isText)
         sprintf(result, "%s", dt->text);
     else
-        sprintf(result, "%sT%s", dt->date, dt->time);
+    {
+        if (strlen(dt->date) > 0 && strlen(dt->time) > 0)
+            sprintf(result, "%sT%s", dt->date, dt->time);
+        else if (strlen(dt->date) > 0)
+            sprintf(result, "%s", dt->date);
+        else
+            sprintf(result, "T%s", dt->time);
+    }
     return result;
 }
