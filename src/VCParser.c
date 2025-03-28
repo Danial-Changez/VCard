@@ -1170,3 +1170,79 @@ char *dateToString(void *date)
     }
     return result;
 }
+
+/* --- Additional Helper Functions for Assignment 3 --- */
+
+/**
+ * Creates and returns a new, empty Card object.
+ * The new Card has its optionalProperties list initialized and birthday/anniversary set to NULL.
+ * The FN property is set to NULL and should be added using updateFN.
+ * @return A pointer to the newly created Card, or NULL if memory allocation fails.
+ */
+Card *createEmptyCard(void)
+{
+    Card *card = malloc(sizeof(Card));
+    if (!card)
+        return NULL;
+    card->fn = NULL;
+    card->optionalProperties = initializeList(&propertyToString, &deleteProperty, &compareProperties);
+    card->birthday = NULL;
+    card->anniversary = NULL;
+    return card;
+}
+
+/**
+ * Updates the FN property of the given Card object with newFN.
+ * If the FN property does not exist, it is created.
+ * The FN property must not be empty.
+ * @param card The Card object whose FN property is to be updated.
+ * @param newFN The new contact name.
+ * @return OK on success, or an appropriate error code (e.g., INV_PROP or OTHER_ERROR) on failure.
+ */
+VCardErrorCode updateFN(Card *card, const char *newFN)
+{
+    if (!card || !newFN || strlen(newFN) == 0)
+        return INV_PROP;
+
+    if (card->fn) {
+        // Update existing FN property.
+        if (getLength(card->fn->values) > 0 && card->fn->values->head) {
+            // Free the old value.
+            free(card->fn->values->head->data);
+            // Set new value.
+            card->fn->values->head->data = duplicateString(newFN);
+            if (!card->fn->values->head->data)
+                return OTHER_ERROR;
+        } else {
+            char *newVal = duplicateString(newFN);
+            if (!newVal)
+                return OTHER_ERROR;
+            insertBack(card->fn->values, newVal);
+        }
+    } else {
+        // Create a new FN property.
+        Property *fnProp = malloc(sizeof(Property));
+        if (!fnProp)
+            return OTHER_ERROR;
+        fnProp->name = duplicateString("FN");
+        fnProp->group = duplicateString("");
+        fnProp->parameters = initializeList(&parameterToString, &deleteParameter, &compareParameters);
+        fnProp->values = initializeList(&valueToString, &deleteValue, &compareValues);
+        if (!fnProp->name || !fnProp->group || !fnProp->parameters || !fnProp->values) {
+            free(fnProp);
+            return OTHER_ERROR;
+        }
+        char *newVal = duplicateString(newFN);
+        if (!newVal) {
+            free(fnProp->name);
+            free(fnProp->group);
+            free(fnProp->parameters);
+            free(fnProp->values);
+            free(fnProp);
+            return OTHER_ERROR;
+        }
+        insertBack(fnProp->values, newVal);
+        card->fn = fnProp;
+    }
+    return OK;
+}

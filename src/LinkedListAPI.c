@@ -36,7 +36,6 @@ List *initializeList(char *(*printFunction)(void *toBePrinted), void (*deleteFun
  **/
 void freeList(List *list)
 {
-
 	clearList(list);
 	free(list);
 }
